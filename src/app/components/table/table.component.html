@@ -25,7 +25,7 @@
           <td *ngFor="let col of columns">
             <ng-container [ngSwitch]="col.type">
               <ng-container *ngSwitchCase="'date'">
-                {{ row[col.key] | date:'dd/MM/yyyy' }}
+                {{row[col.key] | date:'dd/MM/yyyy'}}
               </ng-container>
               <ng-container *ngSwitchCase="'actions'">
                 <div class="action-buttons">

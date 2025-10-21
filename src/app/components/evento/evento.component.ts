@@ -1,10 +1,10 @@
 import { Component, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormsModule } from '@angular/forms';
+import { FormsModule, NgForm } from '@angular/forms';
 import { Evento } from '../../models/evento.model';
 import { EventoService } from '../../services/evento.service';
-import { UserService } from '../../services/user.service';
 import { User } from '../../models/user.model';
+import { UserService } from '../../services/user.service';
 import { Location } from '@angular/common';
 
 @Component({
@@ -19,17 +19,27 @@ export class EventoComponent implements OnInit {
   users: User[] = [];
   availableUsers: User[] = [];
   selectedUsers: User[] = [];
-  newEvent: Evento = { name: '', schedule: [], address: '', participantes: [] };
+
+  newEvent: Evento = { name: '', schedule: '', address: '', participantes: [] };
   dateStr: string = '';
   timeStr: string = '';
   errorMessage = '';
-  showDeleteModal = false;
-  private pendingDeleteIndex: number | null = null;
 
+  // control de modales
+  showDeleteModal = false;
+  showUpdateModal = false;
+  pendingDeleteIndex: number | null = null;
+  pendingUpdateEvent: Evento | null = null;
+  pendingUpdateIndex: number | null = null;
+
+  // control de formulario
+  formSubmitted = false;
+
+  // paginación
   availablePage = 1;
-  availablePageSize = 5;
+  availablePageSize = 6;
   selectedPage = 1;
-  selectedPageSize = 5;
+  selectedPageSize = 6;
 
   constructor(
     private eventoService: EventoService,
@@ -38,104 +48,177 @@ export class EventoComponent implements OnInit {
   ) {}
 
   ngOnInit(): void {
-    this.userService.getUsers().subscribe({
-      next: (users) => {
-        this.users = users as any;
-        this.availableUsers = [...this.users];
-        this.clampPages();
-      }
-    });
+    this.loadEventos();
+    this.loadUsers();
+  }
+
+  // ===== CARGA DE DATOS =====
+  private loadEventos(): void {
     this.eventoService.getEventos().subscribe({
       next: (evts) => {
         this.eventos = evts.map(e => ({
           ...e,
-          schedule: Array.isArray(e.schedule) ? e.schedule : (e.schedule ? [e.schedule as any] : []),
-          participantes: Array.isArray((e as any).participantes) ? (e as any).participantes : ((e as any).participants || [])
+          // Normalizamos schedule para que siempre sea string
+          schedule: Array.isArray(e.schedule)
+            ? (e.schedule.length ? e.schedule[0] : '')
+            : (e.schedule ?? ''),
+          participantes: Array.isArray((e as any).participantes)
+            ? (e as any).participantes
+            : ((e as any).participants || [])
         }));
-      }
+      },
+      error: () => this.errorMessage = 'Error al cargar eventos.'
     });
   }
 
+  private loadUsers(): void {
+    this.userService.getUsers().subscribe({
+      next: (users) => {
+        this.users = users;
+        this.availableUsers = [...this.users];
+      },
+      error: () => this.errorMessage = 'Error al cargar usuarios.'
+    });
+  }
+
+  // ===== NAVEGACIÓN =====
   goHome(): void {
     this.location.back();
   }
 
+  // ===== HORARIO =====
   setSchedule(): void {
     this.errorMessage = '';
     if (!this.dateStr || !this.timeStr) {
       this.errorMessage = 'Selecciona fecha y hora.';
       return;
     }
-    const slot = `${this.dateStr} ${this.timeStr}`;
-    this.newEvent.schedule = [slot];
+    // Guardamos como string (formato backend)
+    this.newEvent.schedule = `${this.dateStr} ${this.timeStr}`;
   }
 
   clearSchedule(): void {
-    this.newEvent.schedule = [];
+    this.newEvent.schedule = '';
     this.dateStr = '';
     this.timeStr = '';
   }
 
+  // ===== PARTICIPANTES =====
   addParticipant(u: User): void {
     if (!u?._id) return;
     this.availableUsers = this.availableUsers.filter(x => x._id !== u._id);
     if (!this.selectedUsers.find(x => x._id === u._id)) this.selectedUsers.push(u);
     this.syncParticipantsIds();
-    this.clampPages();
   }
 
   removeParticipant(u: User): void {
     if (!u?._id) return;
     this.selectedUsers = this.selectedUsers.filter(x => x._id !== u._id);
-    if (!this.availableUsers.find(x => x._id === u._id)) {
-      this.availableUsers.push(u);
-      this.availableUsers.sort((a, b) => a.username.localeCompare(b.username));
-    }
+    if (!this.availableUsers.find(x => x._id === u._id)) this.availableUsers.push(u);
     this.syncParticipantsIds();
-    this.clampPages();
   }
 
   private syncParticipantsIds(): void {
     this.newEvent.participantes = this.selectedUsers.map(u => u._id!).filter(Boolean);
   }
 
+  // ===== CREAR / EDITAR EVENTO =====
   onSubmit(): void {
+    this.formSubmitted = true;
     this.errorMessage = '';
+    this.syncParticipantsIds();
+
     if (!this.newEvent.name?.trim()) {
-      this.errorMessage = 'El ti­tulo del evento es obligatorio.';
+      this.errorMessage = 'El título del evento es obligatorio.';
       return;
     }
-    if (!this.newEvent.schedule?.length) {
+    if (!this.newEvent.schedule?.toString().trim()) {
       this.errorMessage = 'Selecciona el horario del evento.';
       return;
     }
-    if (!this.newEvent.address?.length) {
-      this.errorMessage = 'Selecciona la dirección del evento.';
+    if (!this.newEvent.address?.trim()) {
+      this.errorMessage = 'La dirección es obligatoria.';
       return;
     }
 
+    // si estamos editando
+    if (this.pendingUpdateEvent && this.pendingUpdateIndex !== null) {
+      const actualizado: Evento = { ...this.newEvent, _id: this.pendingUpdateEvent._id };
+      this.pendingUpdateEvent = actualizado;
+      this.showUpdateModal = true;
+      return;
+    }
+
+    // crear evento nuevo
     this.eventoService.addEvento(this.newEvent).subscribe({
       next: (created) => {
-        const normalized: Evento = {
-          ...created,
-          schedule: Array.isArray(created.schedule) ? created.schedule : (created.schedule ? [created.schedule as any] : []),
-          participantes: Array.isArray((created as any).participantes) ? (created as any).participantes : ((created as any).participants || [])
-        };
-        this.eventos.push(normalized);
+        this.eventos.push(created);
         this.resetForm();
       },
-      error: () => this.errorMessage = 'Error al crear el evento. Revisa los datos.'
+      error: () => this.errorMessage = 'Error al crear evento.'
     });
   }
 
+  confirmarUpdate(): void {
+    if (!this.pendingUpdateEvent || this.pendingUpdateIndex == null) {
+      this.closeUpdateModal();
+      return;
+    }
+
+    this.eventoService.updateEvento(this.pendingUpdateEvent._id!, this.pendingUpdateEvent).subscribe({
+      next: (updated: Evento) => {
+        this.eventos[this.pendingUpdateIndex!] = { ...updated };
+        this.closeUpdateModal();
+        this.resetForm();
+      },
+      error: () => {
+        this.errorMessage = 'Error al actualizar el evento.';
+        this.closeUpdateModal();
+      }
+    });
+  }
+
+  prepararEdicion(evt: Evento, index: number): void {
+    this.pendingUpdateEvent = { ...evt };
+    this.pendingUpdateIndex = index;
+    this.newEvent = { ...evt };
+
+    const sched = Array.isArray(evt.schedule)
+      ? (evt.schedule.length ? evt.schedule[0] : '')
+      : evt.schedule;
+
+    if (sched) {
+      const [date, time] = sched.split(' ');
+      this.dateStr = date;
+      this.timeStr = time;
+    }
+
+    const participantes = evt.participantes ?? [];
+    this.selectedUsers = this.users.filter(u => participantes.includes(u._id!));
+    this.availableUsers = this.users.filter(u => !participantes.includes(u._id!));
+  }
+
+  cancelarEdicion(): void {
+    this.pendingUpdateEvent = null;
+    this.pendingUpdateIndex = null;
+    this.resetForm();
+  }
+
+  closeUpdateModal(): void {
+    this.showUpdateModal = false;
+    this.pendingUpdateEvent = null;
+    this.pendingUpdateIndex = null;
+  }
+
+  // ===== ELIMINAR EVENTO =====
   openDeleteModal(index: number): void {
     this.pendingDeleteIndex = index;
     this.showDeleteModal = true;
   }
 
   closeDeleteModal(): void {
-    this.showDeleteModal = false;
     this.pendingDeleteIndex = null;
+    this.showDeleteModal = false;
   }
 
   confirmarEliminar(): void {
@@ -145,53 +228,53 @@ export class EventoComponent implements OnInit {
     }
     const idx = this.pendingDeleteIndex;
     const evt = this.eventos[idx];
-    if (!evt?._id) {
+
+    if (!evt._id) {
+      alert('El evento no está guardado en la base de datos.');
       this.closeDeleteModal();
       return;
     }
+
     this.eventoService.deleteEvento(evt._id).subscribe({
       next: () => {
         this.eventos.splice(idx, 1);
         this.closeDeleteModal();
       },
       error: () => {
-        this.errorMessage = 'Error al eliminar el evento.';
+        this.errorMessage = 'Error al eliminar evento.';
         this.closeDeleteModal();
       }
     });
   }
 
+  // ===== FORMATEADORES =====
   getScheduleText(e: Evento): string {
-    if (Array.isArray(e.schedule) && e.schedule.length) return this.formatSchedule(e.schedule[0]);
-    if (typeof (e as any).schedule === 'string') return this.formatSchedule((e as any).schedule);
-    return '-';
+    return this.formatSchedule(e.schedule);
   }
 
-  formatSchedule(s: string | undefined | null): string {
+  formatSchedule(s: string | string[] | undefined | null): string {
     if (!s) return '-';
+    if (Array.isArray(s)) s = s[0];
+    if (typeof s !== 'string') return '-';
+
     const sep = s.includes('T') ? 'T' : ' ';
     const [d, t = ''] = s.split(sep);
     const [y, m, d2] = d.split('-');
-    const hhmm = t.slice(0,5);
-    if (y && m && d2) return `${d2}-${m}-${y}${hhmm ? ' ' + hhmm : ''}`;
-    return s;
+    const hhmm = t.slice(0, 5);
+    return `${d2}-${m}-${y}${hhmm ? ' ' + hhmm : ''}`;
   }
 
   getEventAddress(e: any): string {
-    return e?.address ?? e?.direccion ?? '-';
-  }
-
-  getParticipantsList(e: any): string[] {
-    return e?.participantes ?? e?.participants ?? [];
+    return e?.address ?? '-';
   }
 
   getParticipantsNames(e: any): string {
-    const ids = this.getParticipantsList(e);
-    const names = ids.map(p => this.getUserNameById(p)).filter(Boolean);
+    const ids = e.participantes ?? [];
+    const names = ids.map((id: string | any) => this.getUserNameById(id)).filter(Boolean);
     return names.length ? names.join(', ') : '-';
   }
 
-  getUserNameById(idOrObj: any): string {
+  private getUserNameById(idOrObj: any): string {
     if (idOrObj && typeof idOrObj === 'object') {
       if (idOrObj.username) return idOrObj.username;
       if (idOrObj._id) {
@@ -203,6 +286,7 @@ export class EventoComponent implements OnInit {
     return u ? u.username : (idOrObj || '');
   }
 
+  // ===== PAGINACIÓN =====
   get availableTotalPages(): number {
     return Math.max(1, Math.ceil(this.availableUsers.length / this.availablePageSize));
   }
@@ -226,10 +310,8 @@ export class EventoComponent implements OnInit {
     if (this.availablePage < this.availableTotalPages) this.availablePage++;
   }
   setAvailablePageSize(v: string): void {
-    const n = parseInt(v, 10) || 5;
-    this.availablePageSize = n;
+    this.availablePageSize = parseInt(v, 10) || 5;
     this.availablePage = 1;
-    this.clampPages();
   }
 
   selectedPrevPage(): void {
@@ -239,26 +321,17 @@ export class EventoComponent implements OnInit {
     if (this.selectedPage < this.selectedTotalPages) this.selectedPage++;
   }
   setSelectedPageSize(v: string): void {
-    const n = parseInt(v, 10) || 5;
-    this.selectedPageSize = n;
+    this.selectedPageSize = parseInt(v, 10) || 5;
     this.selectedPage = 1;
-    this.clampPages();
-  }
-
-  private clampPages(): void {
-    this.availablePage = Math.min(Math.max(1, this.availablePage), this.availableTotalPages);
-    this.selectedPage = Math.min(Math.max(1, this.selectedPage), this.selectedTotalPages);
   }
 
   private resetForm(): void {
-    this.newEvent = { name: '', schedule: [], address: '', participantes: [] };
-    this.availableUsers = [...this.users];
-    this.selectedUsers = [];
+    this.newEvent = { name: '', schedule: '', address: '', participantes: [] };
     this.dateStr = '';
     this.timeStr = '';
+    this.selectedUsers = [];
+    this.availableUsers = [...this.users];
     this.errorMessage = '';
-    this.availablePage = 1;
-    this.selectedPage = 1;
-    this.clampPages();
+    this.formSubmitted = false;
   }
 }

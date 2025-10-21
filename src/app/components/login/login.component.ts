@@ -77,7 +77,9 @@ export class LoginComponent  {
       this.loginForm.get(key)?.markAsTouched();
     });
   }
-
+  goToRegister(): void {
+    this.router.navigate(['/register']);
+  }
   get username() { return this.loginForm.get('username'); }
   get password() { return this.loginForm.get('password'); }
 }

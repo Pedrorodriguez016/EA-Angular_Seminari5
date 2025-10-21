@@ -64,6 +64,17 @@
         {{ isLoading ? 'Iniciando sesión...' : 'Iniciar Sesión' }}
       </button>
     </form>
+      <!-- Sección para crear cuenta -->
+    <div class="admin-section">
+      <p style="color: #666; margin-bottom: 10px; font-size: 13px;">
+        ¿No tienes cuenta? Regístrate aquí.
+      </p>
+      <!-- ✅ CAMBIO: ir a registrar -->
+      <button type="button" class="admin-button" (click)="goToRegister()">
+        Crear usuario
+      </button>
+    </div>
+
 
     <!-- Sección para crear admin (solo desarrollo) -->
     <div class="admin-section">

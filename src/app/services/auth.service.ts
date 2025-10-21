@@ -4,7 +4,7 @@ import { BehaviorSubject, Observable, tap } from 'rxjs';
 
 export interface User {
   _id: string;
-  username: string;
+  user: string;
   gmail: string;
   birthday: Date;
   eventos: string[];
@@ -26,19 +26,21 @@ export class AuthService {
   constructor(private http: HttpClient) {
     // Verificar si hay un usuario en localStorage al inicializar
     const savedUser = localStorage.getItem('currentUser');
-    if (savedUser) {
-      this.currentUserSubject.next(JSON.parse(savedUser));
-    }
+  if (savedUser && savedUser !== 'undefined') {
+  try {
+    this.currentUserSubject.next(JSON.parse(savedUser));
+  } catch (e) {
+    console.error('Error parsing saved user:', e);
+    localStorage.removeItem('currentUser'); // limpiar dato corrupto
+  }
+}
+
   }
 
   login(username: string, password: string): Observable<LoginResponse> {
-    return this.http.post<LoginResponse>(`${this.apiUrl}/user/auth/login`, {
-      username,
-      password
-    }).pipe(
+    return this.http.post<LoginResponse>(`${this.apiUrl}/user/auth/login`, {username, password} ).pipe(
       tap(response => {
         if (response.user) {
-          localStorage.setItem('currentUser', JSON.stringify(response.user));
           this.currentUserSubject.next(response.user);
         }
       })
@@ -60,6 +62,6 @@ export class AuthService {
 
   // Método para crear admin (solo desarrollo)
   createAdminUser(): Observable<any> {
-    return this.http.post(`${this.apiUrl}/user/auth/create-admin`, {});
+    return this.http.post(`${this.apiUrl}/user/auth/create-admin`, {}, { withCredentials: true });
   }
 }

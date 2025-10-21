@@ -28,4 +28,7 @@ export class EventoService {
   deleteEvento(id: string): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/${id}`);
   }
+   updateEvento(id: string, evento: Partial<Evento>): Observable<Evento> {
+    return this.http.put<Evento>(`${this.apiUrl}/${id}`, evento);
+  }
 }

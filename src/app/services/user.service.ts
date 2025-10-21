@@ -25,7 +25,7 @@ export class UserService {
   updateUser(user: User): Observable<User> {
     if (!user._id) throw new Error('Falta _id del usuario a actualizar');
     const headers = new HttpHeaders({ 'Content-Type': 'application/json' });
-    return this.http.put<User>(`${this.apiUrl}/${user._id}`, user, { headers });
+    return this.http.put<User>(`${this.apiUrl}/${user._id}`, user, { withCredentials: true });
   }
 
   deleteUserById(id: string): Observable<void> {
